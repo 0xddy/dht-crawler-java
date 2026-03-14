@@ -1,7 +1,6 @@
-# dht-jni — JNI 混淆保留（须与 Rust 侧 symbols 一致；与 dht-jni/proguard-dht-jni.pro 保持同步）
-# Android: consumerProguardFiles / -include；core jar → META-INF/proguard/dht-jni.pro
+# dht-jni — JNI 与 R8/ProGuard 混淆保留（须与 dht-jni-core/proguard-dht-jni.pro 保持一致）
+# Android: consumerProguardFiles 或 -include 本文件；core / 聚合 jar 均含 META-INF/proguard/dht-jni.pro
 
-# DhtCrawlerJni native symbols Java_cn_lmcw_dht_DhtCrawlerJni_*
 -keepclasseswithmembernames class cn.lmcw.dht.DhtCrawlerJni {
     native <methods>;
 }
@@ -9,7 +8,6 @@
     <init>();
 }
 
-# Rust GetField on DHTOptions
 -keepclassmembers class cn.lmcw.dht.model.DHTOptions {
     <fields>;
 }
@@ -17,7 +15,6 @@
     <init>();
 }
 
-# Rust NewObject FileInfo(String, long)
 -keepclassmembers class cn.lmcw.dht.model.FileInfo {
     <fields>;
     <init>(java.lang.String, long);
@@ -26,7 +23,6 @@
     <init>(java.lang.String, long);
 }
 
-# Rust NewObject TorrentInfo
 -keepclassmembers class cn.lmcw.dht.model.TorrentInfo {
     <fields>;
     <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
@@ -35,7 +31,6 @@
     <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
 }
 
-# call_method onTorrent / onError / onMetadataFetch
 -keep class cn.lmcw.dht.DhtListener {
     public <methods>;
 }
@@ -43,7 +38,6 @@
     public <methods>;
 }
 
-# Public API
 -keep class cn.lmcw.dht.DhtCrawler {
     public <methods>;
 }

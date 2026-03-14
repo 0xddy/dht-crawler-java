@@ -55,7 +55,6 @@ runtimeOnly(project(":dht-jni-native-linux-x64"))
 | 文件 | 用途 |
 |------|------|
 | **dht-jni-core-&lt;版本&gt;.jar** | 必装：Kotlin/Java API |
-| **dht-jni-core-&lt;版本&gt;-sources.jar** | 可选：源码 |
 | **dht-jni-native-linux-x64-&lt;版本&gt;.jar** | Linux x64 + `libdht_crawler.so` |
 | **dht-jni-native-win-x64-&lt;版本&gt;.jar** | Windows x64 + dll |
 
@@ -88,9 +87,11 @@ JVM 属性同前：`dht.port`、`dht.netMode`、`dht.durationSec`、`dht.statsSe
 
 可把 sample 改为只依赖 `dht-jni-core` + `dht-jni-native-linux-x64`，fat jar 里只带 linux-x64 so。见 [dht-jni-sample/DEPLOY.md](dht-jni-sample/DEPLOY.md)。
 
-## ProGuard / R8
+## ProGuard / R8（JNI 混淆）
 
-规则在 **dht-jni-core** 的 `proguard-dht-jni.pro`；jar 内 `META-INF/proguard/dht-jni.pro`。
+- **文件位置**：`dht-jni-core/proguard-dht-jni.pro` 与 **`dht-jni/proguard-dht-jni.pro`** 内容一致（改一处请同步另一处）。
+- **打进 JAR**：`dht-jni-core-*.jar` 与 **`dht-jni-*.jar`** 内均有 `META-INF/proguard/dht-jni.pro`。
+- **用法**：Android `consumerProguardFiles`、或 Release 里解压 jar 后 `-include` 该路径。
 
 ## API notes
 
@@ -107,7 +108,7 @@ JVM 属性同前：`dht.port`、`dht.netMode`、`dht.durationSec`、`dht.statsSe
 | **Native 来源（默认）** | 从 [dht-crawler Releases](https://github.com/0xddy/dht-crawler/releases) **下载预编译 zip**（如 `dht_crawler_jni-v1.0.2-x86_64-unknown-linux-gnu.zip`），**不再在 CI 里编 Rust**，省 Actions 分钟与缓存体积 |
 | **备选** | 手动运行里 `native_source=cargo` 时仍会 `git clone` + `cargo build --features jni` |
 | **锁定上游版本** | `dht_crawler_tag` 填 `v1.0.2` 等则下载该 tag 的 zip；留空则用 **latest** |
-| **发版产物** | 每次 **push tag**：Linux + Windows 胖 JAR，以及 **core / sources / linux-native / win-native**（不再上传空的 `dht-jni-*.jar`） |
+| **发版产物** | 每次 **push tag**：Linux + Windows 胖 JAR，以及 **core / linux-native / win-native**（不上传 sources、不上传空 `dht-jni-*.jar`） |
 | **缓存** | 仅 Gradle cache；无 Cargo 时 Rust 工具链也可不装（push tag 路径零 Rust） |
 | **Release 体积** | 旧 Release 可手动删资产；勿重复上传多份相同 JAR |
 

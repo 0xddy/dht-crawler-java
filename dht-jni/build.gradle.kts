@@ -25,4 +25,11 @@ tasks.jar {
             "Implementation-Version" to project.version.toString(),
         )
     }
+    // 与 dht-jni-core 一致，便于只依赖聚合 jar 时也能 -include META-INF/proguard/dht-jni.pro
+    metaInf {
+        from(layout.projectDirectory.file("proguard-dht-jni.pro")) {
+            rename { "dht-jni.pro" }
+            into("proguard")
+        }
+    }
 }

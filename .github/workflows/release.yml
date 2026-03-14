@@ -126,7 +126,7 @@ jobs:
             EXTRA="-Pdht.kt.version=${{ inputs.library_version }}"
           fi
           ./gradlew $EXTRA :dht-jni-sample:shadowJar \
-            :dht-jni-core:jar :dht-jni-core:sourcesJar \
+            :dht-jni-core:jar \
             :dht-jni-native-linux-x64:jar \
             --no-daemon
           mkdir -p dist
