@@ -1,130 +1,133 @@
-# dht-kt
+# dht-crawler-java
 
-Kotlin JVM bindings for [dht-crawler](https://github.com/0xddy/dht-crawler) over JNI.
+基于 [dht-crawler](https://github.com/0xddy/dht-crawler)（Rust）的 **Kotlin / JVM JNI 绑定**。在 Java 里启动 DHT、收种子元数据。
 
-**Tooling:** Gradle **9.4.0**, Kotlin **2.3.10**, Shadow **9.3.2**, Foojay resolver **1.0.0**. Natives are packaged in **platform jars** and **extracted on first use**, then loaded via `System.load`.
+---
 
-## 模块结构
+### 用 JAR 接入
 
-| Module | Description |
-|--------|-------------|
-| **dht-jni-core** | API：`DhtCrawler`、`DhtListener`、`DHTOptions`、`NativeLoader`（JNI 与 [types.rs](https://github.com/0xddy/dht-crawler/blob/master/jni/types.rs) 对齐）；**不含** so/dll |
-| **dht-jni-native-*** | 仅资源：单平台一条依赖，减小发布体积 |
-| **dht-jni** | 仅多模块 Gradle 用：`api(core)` + 全平台 native；**空 jar、不发 Release** |
-| **dht-jni-sample** | 示例入口 |
-
-### Native 子模块与路径
-
-| Gradle 模块 | 资源路径（放入构建产物） |
-|-------------|-------------------------|
-| `dht-jni-native-win-x64` | `native/win-x64/dht_crawler.dll` |
-| `dht-jni-native-linux-x64` | `native/linux-x64/libdht_crawler.so` |
-| `dht-jni-native-linux-aarch64` | `native/linux-aarch64/libdht_crawler.so` |
-| `dht-jni-native-osx-x64` | `native/osx-x64/libdht_crawler.dylib` |
-| `dht-jni-native-osx-aarch64` | `native/osx-aarch64/libdht_crawler.dylib` |
-
-在 [dht-crawler](https://github.com/0xddy/dht-crawler) 根目录：
-
-```bash
-cargo build --release --features jni
-```
-
-把对应平台的库复制到上表 **模块目录** 下的 `src/main/resources/native/...`（与 README.txt 同级）。
-
-## 依赖方式
-
-**全平台（与以前一样）**
+1. 打开 **[Releases](https://github.com/0xddy/dht-crawler-java/releases)**，下载对应版本：
+  - `**dht-jni-core-<版本>.jar`** — 必下，API 在这
+  - `**dht-jni-native-linux-x64-<版本>.jar**` 或 `**…-win-x64-…**` — 按你部署系统 **二选一**（里面带 so / dll）
+2. 放进工程的 `libs/`，Gradle 示例：
 
 ```kotlin
-implementation(project(":dht-jni"))
-```
-
-**只带 Linux x64（服务器瘦包）**
-
-```kotlin
-implementation(project(":dht-jni-core"))
-runtimeOnly(project(":dht-jni-native-linux-x64"))
-```
-
-仅 core 时 classpath 上没有对应平台 native 会报错，除非先 `DhtCrawlerNative.loadFromPath(Path)`。
-
-### 不用源码、只从 GitHub Release 依赖
-
-每个 [Release](https://github.com/0xddy/dht-crawler-java/releases) 里除 **sample 可运行 fat JAR** 外，还会上传库 JAR；**版本号**由仓库根目录 **`gradle.properties`** 里的 **`dht.kt.version`** 决定（例如 `1.0.0` → `dht-jni-native-linux-x64-1.0.0.jar`）。
-
-| 文件 | 用途 |
-|------|------|
-| **dht-jni-core-&lt;版本&gt;.jar** | 必装：Kotlin/Java API |
-| **dht-jni-native-linux-x64-&lt;版本&gt;.jar** | Linux x64 + `libdht_crawler.so` |
-| **dht-jni-native-win-x64-&lt;版本&gt;.jar** | Windows x64 + dll |
-
-**改版本：** 编辑 `gradle.properties` 中 `dht.kt.version=…` 后再打 tag / 本地 `./gradlew jar`。本地或 CI 也可覆盖：  
-`./gradlew -Pdht.kt.version=1.2.3 jar`。手动跑 GitHub Actions 时可在 **「库 JAR 版本号」** 里填写，会覆盖当次构建（不必先改仓库里的 properties）。
-
-Gradle 示例（把 jar 放到 `libs/`，版本与 `dht.kt.version` 一致）：
-
-```kotlin
-val v = "1.0.0" // 与 gradle.properties dht.kt.version 对齐
+val dht = "1.0.2"   // 与 Release 里 jar 文件名版本一致
 dependencies {
-    implementation(files("libs/dht-jni-core-$v.jar"))
-    runtimeOnly(files("libs/dht-jni-native-linux-x64-$v.jar"))
+    implementation(files("libs/dht-jni-core-$dht.jar"))
+    runtimeOnly(files("libs/dht-jni-native-linux-x64-$dht.jar"))  // Linux
+    // Windows 用：runtimeOnly(files("libs/dht-jni-native-win-x64-$dht.jar"))
 }
 ```
 
-## Run sample
+1. 代码里直接用 `DhtCrawler` 即可：**第一次**用到 JNI 时会在内部自动从 classpath 的 native jar 里 **解压 so/dll 再 `System.load`**，不必自己写释放/加载。只有库放在磁盘路径时，才需在任意 `DhtCrawler` 调用前 `DhtCrawlerNative.loadFromPath(Path("..."))`。
+2. **只想先跑通**：直接下 `**dht-sample-<tag>-linux-x64-all.jar`** 或 `**-win-x64-…**`，然后：
 
 ```bash
-./gradlew :dht-jni-sample:run
+java -jar dht-sample-vx.x.x-linux-x64-all.jar
 ```
 
-JVM 属性同前：`dht.port`、`dht.netMode`、`dht.durationSec`、`dht.statsSec`、`dht.jni.library.path`。
+常用 JVM 参数：`-Ddht.port=12313`、`-Ddht.durationSec=60`（跑满 60 秒退出）、`-Ddht.statsSec=30`（统计间隔）。自备 **JDK 21**。
 
-## Pack for server
 
-```bash
-./gradlew :dht-jni-sample:build
+
+### 启动运行
+
+```kotlin
+import cn.lmcw.dht.DhtCrawler
+import cn.lmcw.dht.DhtListener
+import cn.lmcw.dht.model.DHTOptions
+import cn.lmcw.dht.model.TorrentInfo
+import kotlin.io.path.Path
+
+// 可选：仅当 so/dll 不在 jar 里、而在磁盘上时，必须在 createServer 之前调用
+System.getProperty("dht.jni.library.path")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+    DhtCrawlerNative.loadFromPath(Path(it))
+}
+
+val options = DHTOptions().setPort(System.getProperty("dht.port")?.toIntOrNull() ?: 12313)
+val listener = object : DhtListener {
+    override fun onTorrent(info: TorrentInfo) = println("${info.infoHash}  ${info.name}")
+    override fun onError(message: String) = System.err.println(message)
+}
+// 下面第一次碰到 JNI → 内部 NativeLoader 自动解压 classpath 里的 native 并加载
+DhtCrawler.createServer(options, listener).use { it.start(); Thread.sleep(Long.MAX_VALUE) }
 ```
 
-可把 sample 改为只依赖 `dht-jni-core` + `dht-jni-native-linux-x64`，fat jar 里只带 linux-x64 so。见 [dht-jni-sample/DEPLOY.md](dht-jni-sample/DEPLOY.md)。
+完整版（统计间隔、`durationSec` 退出等）见 **[docs/sample-run.kt](docs/sample-run.kt)**。
 
-## ProGuard / R8（JNI 混淆）
+---
 
-- **文件位置**：`dht-jni-core/proguard-dht-jni.pro` 与 **`dht-jni/proguard-dht-jni.pro`** 内容一致（改一处请同步另一处）。
-- **打进 JAR**：`dht-jni-core-*.jar` 与 **`dht-jni-*.jar`** 内均有 `META-INF/proguard/dht-jni.pro`。
-- **用法**：Android `consumerProguardFiles`、或 Release 里解压 jar 后 `-include` 该路径。
+## 混淆（ProGuard / R8）
 
-## API notes
+打 release 必须保留 JNI / 回调相关符号，可直接复制下面整段进 `proguard-rules.pro` 或 `-include` 保存后的文件。与仓库 `**dht-jni-core/proguard-dht-jni.pro`** 同源（改规则时请同步该文件）。
 
-- 回调在 Rust 工作线程；监听器需线程安全。
-- 解压目录：`~/.cache/dht-jni/<version>/`
+```proguard
+# dht-jni — JNI 与 Rust 侧 symbols 一致
+-keepclasseswithmembernames class cn.lmcw.dht.DhtCrawlerJni {
+    native <methods>;
+}
+-keep class cn.lmcw.dht.DhtCrawlerJni {
+    <init>();
+}
 
-## GitHub Actions / Release（省配额）
+-keepclassmembers class cn.lmcw.dht.model.DHTOptions {
+    <fields>;
+}
+-keep class cn.lmcw.dht.model.DHTOptions {
+    <init>();
+}
 
-工作流：[`.github/workflows/release.yml`](.github/workflows/release.yml)
+-keepclassmembers class cn.lmcw.dht.model.FileInfo {
+    <fields>;
+    <init>(java.lang.String, long);
+}
+-keep class cn.lmcw.dht.model.FileInfo {
+    <init>(java.lang.String, long);
+}
 
-| 策略 | 说明 |
-|------|------|
-| **触发** | 仅 `push tag v*` 或手动 `workflow_dispatch`，**不在每次 push main 时构建** |
-| **Native 来源（默认）** | 从 [dht-crawler Releases](https://github.com/0xddy/dht-crawler/releases) **下载预编译 zip**（如 `dht_crawler_jni-v1.0.2-x86_64-unknown-linux-gnu.zip`），**不再在 CI 里编 Rust**，省 Actions 分钟与缓存体积 |
-| **备选** | 手动运行里 `native_source=cargo` 时仍会 `git clone` + `cargo build --features jni` |
-| **锁定上游版本** | `dht_crawler_tag` 填 `v1.0.2` 等则下载该 tag 的 zip；留空则用 **latest** |
-| **发版产物** | 每次 **push tag**：Linux + Windows 胖 JAR，以及 **core / linux-native / win-native**（不上传 sources、不上传空 `dht-jni-*.jar`） |
-| **缓存** | 仅 Gradle cache；无 Cargo 时 Rust 工具链也可不装（push tag 路径零 Rust） |
-| **Release 体积** | 旧 Release 可手动删资产；勿重复上传多份相同 JAR |
+-keepclassmembers class cn.lmcw.dht.model.TorrentInfo {
+    <fields>;
+    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
+}
+-keep class cn.lmcw.dht.model.TorrentInfo {
+    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
+}
 
-**发版命令示例**
+-keep class cn.lmcw.dht.DhtListener {
+    public <methods>;
+}
+-keep class * implements cn.lmcw.dht.DhtListener {
+    public <methods>;
+}
 
-```bash
-git tag v1.0.1
-git push origin v1.0.1
+-keep class cn.lmcw.dht.DhtCrawler {
+    public <methods>;
+}
+-keep class cn.lmcw.dht.DhtCrawlerNative {
+    public <methods>;
+}
+-keep class cn.lmcw.dht.NativeLoader {
+    public <methods>;
+}
 ```
 
-CI 会拉取上游 **latest** JNI zip、解压出 `libdht_crawler.so`、打 Shadow JAR 并挂到该 tag 的 GitHub Release。
+也可从 `**dht-jni-core-*.jar**` 内使用 `**META-INF/proguard/dht-jni.pro**`。
 
-## Legal
+---
 
-DHT 使用须合法合规。
+## 开发本仓库
 
-## Windows
 
-若 DLL 需 MSVC 运行库，请安装 [VC++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。
+| 命令                                | 作用             |
+| --------------------------------- | -------------- |
+| `./gradlew :dht-jni-sample:run`   | 本地跑示例          |
+| `./gradlew :dht-jni-sample:build` | 打 sample 胖 JAR |
+
+
+---
+
+## 说明与合规
+
+- 回调在 **Rust 线程**里执行，监听器请 **线程安全**。
+

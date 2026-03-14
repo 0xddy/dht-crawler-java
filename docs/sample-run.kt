@@ -1,3 +1,9 @@
+/**
+ * Sample 与 SampleMain.kt 一致。
+ *
+ * so/dll：classpath 上有对应 native jar 时，第一次用 DhtCrawler 会 **内部自动** 解压并加载，无需手写。
+ * 仅当库在磁盘路径时，在任意 DhtCrawler 前调用 loadFromPath。
+ */
 package cn.lmcw.dht.sample
 
 import cn.lmcw.dht.DhtCrawler
@@ -9,17 +15,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.Path
 
-/**
- * 与 **docs/sample-run.kt** 同步。
- *
- * classpath 上带有 native jar 时，**首次**用到 `DhtCrawler` 会在内部自动解压 so/dll 并 `System.load`，不必手写加载逻辑。
- * 只有要把库放在磁盘任意路径时，才需在**任何** `DhtCrawler` 调用之前执行 `DhtCrawlerNative.loadFromPath`（见下方 dht.jni.library.path）。
- *
- * JVM: dht.jni.library.path, dht.port, dht.netMode, dht.durationSec, dht.statsSec
- */
 fun main() {
-    System.getProperty("dht.jni.library.path")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
-        cn.lmcw.dht.DhtCrawlerNative.loadFromPath(Path(path))
+    System.getProperty("dht.jni.library.path")?.trim()?.takeIf { it.isNotEmpty() }?.let {
+        cn.lmcw.dht.DhtCrawlerNative.loadFromPath(Path(it))
     }
 
     val port = System.getProperty("dht.port")?.toIntOrNull() ?: 12313
@@ -44,36 +42,28 @@ fun main() {
             metadataOk.incrementAndGet()
             println("${info.infoHash}  ${info.name}")
         }
-
         override fun onError(message: String) {
             System.err.println(message)
         }
     }
 
-    println("UDP port=$port  (metadata lines: info_hash + name)")
-    println()
+    println("UDP port=$port\n")
 
     val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "dht-sample-stats").apply { isDaemon = true }
     }
 
     DhtCrawler.createServer(options, listener).use { crawler ->
-        Runtime.getRuntime().addShutdownHook(
-            Thread {
-                scheduler.shutdownNow()
-                try {
-                    crawler.stop()
-                } catch (_: Throwable) { }
-            },
-        )
-
+        Runtime.getRuntime().addShutdownHook(Thread {
+            scheduler.shutdownNow()
+            try { crawler.stop() } catch (_: Throwable) { }
+        })
         crawler.start()
 
         val statsTask = scheduler.scheduleAtFixedRate({
             val elapsedSec = ((System.currentTimeMillis() - startedAt).coerceAtLeast(1)) / 1000
             val n = metadataOk.get()
-            val perSec = n.toDouble() / elapsedSec
-            println("[port=$port] metadata_ok=$n  speed=${"%.2f".format(perSec)}/s")
+            println("[port=$port] metadata_ok=$n  speed=${"%.2f".format(n.toDouble() / elapsedSec)}/s")
         }, statsSec, statsSec, TimeUnit.SECONDS)
 
         if (durationSec <= 0) {
