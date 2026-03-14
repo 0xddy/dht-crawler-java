@@ -1,6 +1,4 @@
-# 默认从 dht-crawler Releases 下载预编译 JNI（省 Rust 编译时间与 Actions 分钟）。
-# 备选：workflow_dispatch 选 cargo 时 git clone + cargo build。
-# 资产命名示例：dht_crawler_jni-v1.0.2-x86_64-unknown-linux-gnu.zip
+# 每次发版默认：Linux + Windows 各一份 sample 胖 JAR，以及 Linux 任务产出的依赖库 JAR。
 # https://github.com/0xddy/dht-crawler/releases
 name: Release
 
@@ -14,20 +12,20 @@ on:
         required: true
         default: "v1.0.0"
       native_source:
-        description: "native 来源：release_zip=下载上游预编译（推荐）；cargo=本机编译 Rust"
+        description: "native：release_zip=上游预编译 zip；cargo=本机 cargo 编（仅手动时）"
         type: choice
         options:
           - release_zip
           - cargo
         default: release_zip
       dht_crawler_tag:
-        description: "上游 JNI zip 版本，留空=始终用 latest（如 v1.0.2）"
+        description: "上游 JNI 版本，留空=latest（如 v1.0.2）"
         required: false
         default: ""
-      build_windows:
-        description: "同时打 Windows fat JAR（再下一份 windows-gnu zip 或 cargo）"
-        type: boolean
-        default: false
+      library_version:
+        description: "库 JAR 版本号（如 1.2.0 → dht-jni-native-linux-x64-1.2.0.jar）；留空则用仓库 gradle.properties 里 dht.kt.version"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -51,61 +49,44 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # ---------- 手动触发 + release_zip ----------
-      - name: 下载 dht-crawler 预编译 JNI (Linux x64)
+      - name: 下载 JNI (Linux) — 手动 + release_zip
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'release_zip'
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then
-            API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
-          else
-            API="${{ env.DHT_CRAWLER_API }}/releases/latest"
-          fi
-          echo "GET $API"
+          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
-          if 'assets' not in j:
-              print(j.get('message', j)); sys.exit(1)
-          suffix = 'x86_64-unknown-linux-gnu.zip'
-          url = None
+          if 'assets' not in j: print(j.get('message', j)); sys.exit(1)
           for a in j['assets']:
-              # 必须与 example 的 .tar.gz 区分；若以后也有同名后缀 zip，只取 jni
-              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith(suffix):
-                  url = a['browser_download_url']; name = a['name']; break
-          if not url:
-              sys.exit('No asset ending with ' + suffix)
-          print('Download', name)
-          urllib.request.urlretrieve(url, 'jni.zip')
-          zipfile.ZipFile('jni.zip').extractall('jni_out')
-          dest = 'dht-jni-native-linux-x64/src/main/resources/native/linux-x64'
-          os.makedirs(dest, exist_ok=True)
-          for root, _, files in os.walk('jni_out'):
-              for f in files:
-                  if f.endswith('.so'):
-                      shutil.copy2(os.path.join(root, f), os.path.join(dest, 'libdht_crawler.so'))
-                      print('->', dest + '/libdht_crawler.so')
-                      sys.exit(0)
-          sys.exit('No .so in zip')
+              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith('x86_64-unknown-linux-gnu.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-linux-x64/src/main/resources/native/linux-x64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.endswith('.so'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.so'))
+                              print('OK', a['name']); sys.exit(0)
+                  sys.exit('no .so')
+          sys.exit('no linux jni zip')
           "
 
-      # ---------- 备选：cargo 编译 ----------
       - uses: dtolnay/rust-toolchain@stable
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
 
-      - name: Cargo 编译 JNI (Linux)
+      - name: Cargo JNI (Linux)
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         run: |
           git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
           cd dht-crawler-build && cargo build --release --features jni
           mkdir -p ../dht-jni-native-linux-x64/src/main/resources/native/linux-x64
-          cp -v target/release/libdht_crawler.so \
-            ../dht-jni-native-linux-x64/src/main/resources/native/linux-x64/
+          cp -v target/release/libdht_crawler.so ../dht-jni-native-linux-x64/src/main/resources/native/linux-x64/
 
-      # push tag 时固定用 release_zip（无 inputs）
-      - name: 下载预编译 (push tag)
+      - name: 下载 JNI (Linux) — push tag 默认
         if: github.event_name == 'push'
         run: |
           set -e
@@ -125,7 +106,7 @@ jobs:
                               shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.so'))
                               sys.exit(0)
                   sys.exit('no .so')
-          sys.exit('no linux zip asset')
+          sys.exit('no linux jni zip')
           "
 
       - uses: actions/cache@v4
@@ -136,19 +117,21 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Fat JAR + 依赖库 JAR（core / 聚合 / Linux native）
+      - name: Fat JAR + 依赖库 JAR
         run: |
           chmod +x gradlew
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
-          ./gradlew :dht-jni-sample:shadowJar \
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.library_version }}" ]; then
+            EXTRA="-Pdht.kt.version=${{ inputs.library_version }}"
+          fi
+          ./gradlew $EXTRA :dht-jni-sample:shadowJar \
             :dht-jni-core:jar :dht-jni-core:sourcesJar \
             :dht-jni:jar \
             :dht-jni-native-linux-x64:jar \
             --no-daemon
           mkdir -p dist
-          SRC=$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)
-          cp -v "$SRC" "dist/dht-sample-${TAG}-linux-x64-all.jar"
-          # 与 Gradle 模块名一致，便于本地 flatDir / 手工依赖
+          cp -v "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-linux-x64-all.jar"
           cp -v dht-jni-core/build/libs/dht-jni-core-*.jar dist/
           cp -v dht-jni/build/libs/dht-jni-*.jar dist/
           cp -v dht-jni-native-linux-x64/build/libs/dht-jni-native-linux-x64-*.jar dist/
@@ -162,8 +145,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # 默认每次发版都跑：与 Linux 并行，上传 Windows 胖 JAR + win native 模块 jar
   release-windows:
-    if: github.event_name == 'workflow_dispatch' && inputs.build_windows == true
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -173,26 +156,44 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: 下载预编译 JNI (Windows x64 gnu)
-        if: inputs.native_source == 'release_zip'
+      - name: 下载 JNI (Windows) — push tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -e
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          echo "$JSON" | python3 -c "
+          import json, sys, os, urllib.request, zipfile, shutil
+          j = json.load(sys.stdin)
+          for a in j['assets']:
+              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith('x86_64-pc-windows-gnu.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-win-x64/src/main/resources/native/win-x64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.lower().endswith('.dll'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'dht_crawler.dll'))
+                              print('OK', a['name']); sys.exit(0)
+                  sys.exit('no dll')
+          sys.exit('no windows jni zip')
+          "
+
+      - name: 下载 JNI (Windows) — 手动 + release_zip
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'release_zip'
         shell: bash
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then
-            API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
-          else
-            API="${{ env.DHT_CRAWLER_API }}/releases/latest"
-          fi
+          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
           for a in j['assets']:
-              # example 也是 x86_64-pc-windows-gnu.zip，里只有 .exe，必须只下 jni 包
               if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith('x86_64-pc-windows-gnu.zip'):
                   urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
-                  print('Download', a['name'])
                   zipfile.ZipFile('jni.zip').extractall('jni_out')
                   d = 'dht-jni-native-win-x64/src/main/resources/native/win-x64'
                   os.makedirs(d, exist_ok=True)
@@ -201,15 +202,15 @@ jobs:
                           if f.lower().endswith('.dll'):
                               shutil.copy2(os.path.join(root, f), os.path.join(d, 'dht_crawler.dll'))
                               sys.exit(0)
-                  sys.exit('no dll in jni zip')
-          sys.exit('no dht_crawler_jni windows zip asset')
+                  sys.exit('no dll')
+          sys.exit('no windows jni zip')
           "
 
       - uses: dtolnay/rust-toolchain@stable
-        if: inputs.native_source == 'cargo'
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
 
-      - name: Cargo 编译 (Windows)
-        if: inputs.native_source == 'cargo'
+      - name: Cargo JNI (Windows)
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         shell: bash
         run: |
           git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
@@ -225,19 +226,22 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-win-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
-      - name: Fat JAR + Windows native 模块 JAR
+      - name: Windows 胖 JAR + win native 模块
         shell: bash
         run: |
-          ./gradlew.bat :dht-jni-sample:shadowJar \
-            :dht-jni-native-win-x64:jar --no-daemon
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.library_version }}" ]; then
+            EXTRA="-Pdht.kt.version=${{ inputs.library_version }}"
+          fi
+          ./gradlew.bat $EXTRA :dht-jni-sample:shadowJar :dht-jni-native-win-x64:jar --no-daemon
           mkdir -p dist
-          SRC=$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)
-          cp "$SRC" "dist/dht-sample-${{ inputs.tag_name }}-win-x64-all.jar"
+          cp "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-win-x64-all.jar"
           cp dht-jni-native-win-x64/build/libs/dht-jni-native-win-x64-*.jar dist/
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           generate_release_notes: false
           files: dist/*
         env:

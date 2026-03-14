@@ -50,22 +50,26 @@ runtimeOnly(project(":dht-jni-native-linux-x64"))
 
 ### 不用源码、只从 GitHub Release 依赖
 
-每个 [Release](https://github.com/0xddy/dht-crawler-java/releases) 里除 **sample 可运行 fat JAR** 外，还会上传库 JAR（版本号与 `build.gradle.kts` 里 `version` 一致，当前为 **1.0.0**）：
+每个 [Release](https://github.com/0xddy/dht-crawler-java/releases) 里除 **sample 可运行 fat JAR** 外，还会上传库 JAR；**版本号**由仓库根目录 **`gradle.properties`** 里的 **`dht.kt.version`** 决定（例如 `1.0.0` → `dht-jni-native-linux-x64-1.0.0.jar`）。
 
 | 文件 | 用途 |
 |------|------|
-| **dht-jni-core-1.0.0.jar** | 必装：Kotlin/Java API（`DhtCrawler` 等） |
-| **dht-jni-core-1.0.0-sources.jar** | 可选：源码便于 IDE |
-| **dht-jni-1.0.0.jar** | 可选：聚合坐标；配合下面各 native jar 或仍建议用 core + 单平台 native |
-| **dht-jni-native-linux-x64-1.0.0.jar** | Linux x64：内含 `libdht_crawler.so`，与 core 同 classpath 即可运行 |
-| **dht-jni-native-win-x64-1.0.0.jar** | （若跑了 Windows 构建）Windows x64 的 dll 资源 jar |
+| **dht-jni-core-&lt;版本&gt;.jar** | 必装：Kotlin/Java API |
+| **dht-jni-core-&lt;版本&gt;-sources.jar** | 可选：源码 |
+| **dht-jni-&lt;版本&gt;.jar** | 可选：聚合 |
+| **dht-jni-native-linux-x64-&lt;版本&gt;.jar** | Linux x64 + `libdht_crawler.so` |
+| **dht-jni-native-win-x64-&lt;版本&gt;.jar** | Windows x64 + dll |
 
-Gradle 示例（把 jar 放到 `libs/`）：
+**改版本：** 编辑 `gradle.properties` 中 `dht.kt.version=…` 后再打 tag / 本地 `./gradlew jar`。本地或 CI 也可覆盖：  
+`./gradlew -Pdht.kt.version=1.2.3 jar`。手动跑 GitHub Actions 时可在 **「库 JAR 版本号」** 里填写，会覆盖当次构建（不必先改仓库里的 properties）。
+
+Gradle 示例（把 jar 放到 `libs/`，版本与 `dht.kt.version` 一致）：
 
 ```kotlin
+val v = "1.0.0" // 与 gradle.properties dht.kt.version 对齐
 dependencies {
-    implementation(files("libs/dht-jni-core-1.0.0.jar"))
-    runtimeOnly(files("libs/dht-jni-native-linux-x64-1.0.0.jar")) // 按平台选一个
+    implementation(files("libs/dht-jni-core-$v.jar"))
+    runtimeOnly(files("libs/dht-jni-native-linux-x64-$v.jar"))
 }
 ```
 
@@ -104,7 +108,7 @@ JVM 属性同前：`dht.port`、`dht.netMode`、`dht.durationSec`、`dht.statsSe
 | **Native 来源（默认）** | 从 [dht-crawler Releases](https://github.com/0xddy/dht-crawler/releases) **下载预编译 zip**（如 `dht_crawler_jni-v1.0.2-x86_64-unknown-linux-gnu.zip`），**不再在 CI 里编 Rust**，省 Actions 分钟与缓存体积 |
 | **备选** | 手动运行里 `native_source=cargo` 时仍会 `git clone` + `cargo build --features jni` |
 | **锁定上游版本** | `dht_crawler_tag` 填 `v1.0.2` 等则下载该 tag 的 zip；留空则用 **latest** |
-| **产物** | 默认只上传 **1 个** Linux x64 fat JAR；Windows 仅在手勾 `build_windows` 时上传（对应 `x86_64-pc-windows-gnu.zip`） |
+| **发版产物** | 每次 **push tag** 会**并行**跑 Linux + Windows：上传 `dht-sample-<tag>-linux-x64-all.jar`、`dht-sample-<tag>-win-x64-all.jar`，以及 core / sources / 聚合 / linux-native / win-native 等 JAR |
 | **缓存** | 仅 Gradle cache；无 Cargo 时 Rust 工具链也可不装（push tag 路径零 Rust） |
 | **Release 体积** | 旧 Release 可手动删资产；勿重复上传多份相同 JAR |
 
