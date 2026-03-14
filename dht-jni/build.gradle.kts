@@ -15,7 +15,14 @@ dependencies {
     runtimeOnly(project(":dht-jni-native-osx-aarch64"))
 }
 
-// 不发布空 jar；依赖方仍通过本模块解析到 core + natives
+// 必须生成 jar：Shadow / 部分任务会展开 project 依赖的 libs/*.jar；
+// 本模块无源码，jar 几乎为空，仅作聚合坐标；实质依赖仍是 api(core)+runtimeOnly(natives)。
 tasks.jar {
-    enabled = false
+    enabled = true
+    manifest {
+        attributes(
+            "Implementation-Title" to "dht-jni (aggregator)",
+            "Implementation-Version" to project.version.toString(),
+        )
+    }
 }

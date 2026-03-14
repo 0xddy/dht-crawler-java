@@ -72,7 +72,8 @@ jobs:
           suffix = 'x86_64-unknown-linux-gnu.zip'
           url = None
           for a in j['assets']:
-              if a['name'].endswith(suffix):
+              # 必须与 example 的 .tar.gz 区分；若以后也有同名后缀 zip，只取 jni
+              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith(suffix):
                   url = a['browser_download_url']; name = a['name']; break
           if not url:
               sys.exit('No asset ending with ' + suffix)
@@ -113,7 +114,7 @@ jobs:
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
           for a in j['assets']:
-              if a['name'].endswith('x86_64-unknown-linux-gnu.zip'):
+              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith('x86_64-unknown-linux-gnu.zip'):
                   urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
                   zipfile.ZipFile('jni.zip').extractall('jni_out')
                   d = 'dht-jni-native-linux-x64/src/main/resources/native/linux-x64'
@@ -179,8 +180,10 @@ jobs:
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
           for a in j['assets']:
-              if a['name'].endswith('x86_64-pc-windows-gnu.zip'):
+              # example 也是 x86_64-pc-windows-gnu.zip，里只有 .exe，必须只下 jni 包
+              if a['name'].startswith('dht_crawler_jni-') and a['name'].endswith('x86_64-pc-windows-gnu.zip'):
                   urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  print('Download', a['name'])
                   zipfile.ZipFile('jni.zip').extractall('jni_out')
                   d = 'dht-jni-native-win-x64/src/main/resources/native/win-x64'
                   os.makedirs(d, exist_ok=True)
@@ -189,8 +192,8 @@ jobs:
                           if f.lower().endswith('.dll'):
                               shutil.copy2(os.path.join(root, f), os.path.join(d, 'dht_crawler.dll'))
                               sys.exit(0)
-                  sys.exit('no dll in zip')
-          sys.exit('no windows zip asset')
+                  sys.exit('no dll in jni zip')
+          sys.exit('no dht_crawler_jni windows zip asset')
           "
 
       - uses: dtolnay/rust-toolchain@stable
