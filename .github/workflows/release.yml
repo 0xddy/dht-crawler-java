@@ -127,13 +127,11 @@ jobs:
           fi
           ./gradlew $EXTRA :dht-jni-sample:shadowJar \
             :dht-jni-core:jar :dht-jni-core:sourcesJar \
-            :dht-jni:jar \
             :dht-jni-native-linux-x64:jar \
             --no-daemon
           mkdir -p dist
           cp -v "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-linux-x64-all.jar"
           cp -v dht-jni-core/build/libs/dht-jni-core-*.jar dist/
-          cp -v dht-jni/build/libs/dht-jni-*.jar dist/
           cp -v dht-jni-native-linux-x64/build/libs/dht-jni-native-linux-x64-*.jar dist/
           ls -la dist/
 

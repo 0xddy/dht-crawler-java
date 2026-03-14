@@ -10,7 +10,7 @@ Kotlin JVM bindings for [dht-crawler](https://github.com/0xddy/dht-crawler) over
 |--------|-------------|
 | **dht-jni-core** | API：`DhtCrawler`、`DhtListener`、`DHTOptions`、`NativeLoader`（JNI 与 [types.rs](https://github.com/0xddy/dht-crawler/blob/master/jni/types.rs) 对齐）；**不含** so/dll |
 | **dht-jni-native-*** | 仅资源：单平台一条依赖，减小发布体积 |
-| **dht-jni** | 聚合：`api(core)` + 全平台 `runtimeOnly(native*)`，兼容原 `implementation(project(":dht-jni"))` |
+| **dht-jni** | 仅多模块 Gradle 用：`api(core)` + 全平台 native；**空 jar、不发 Release** |
 | **dht-jni-sample** | 示例入口 |
 
 ### Native 子模块与路径
@@ -56,7 +56,6 @@ runtimeOnly(project(":dht-jni-native-linux-x64"))
 |------|------|
 | **dht-jni-core-&lt;版本&gt;.jar** | 必装：Kotlin/Java API |
 | **dht-jni-core-&lt;版本&gt;-sources.jar** | 可选：源码 |
-| **dht-jni-&lt;版本&gt;.jar** | 可选：聚合 |
 | **dht-jni-native-linux-x64-&lt;版本&gt;.jar** | Linux x64 + `libdht_crawler.so` |
 | **dht-jni-native-win-x64-&lt;版本&gt;.jar** | Windows x64 + dll |
 
@@ -108,7 +107,7 @@ JVM 属性同前：`dht.port`、`dht.netMode`、`dht.durationSec`、`dht.statsSe
 | **Native 来源（默认）** | 从 [dht-crawler Releases](https://github.com/0xddy/dht-crawler/releases) **下载预编译 zip**（如 `dht_crawler_jni-v1.0.2-x86_64-unknown-linux-gnu.zip`），**不再在 CI 里编 Rust**，省 Actions 分钟与缓存体积 |
 | **备选** | 手动运行里 `native_source=cargo` 时仍会 `git clone` + `cargo build --features jni` |
 | **锁定上游版本** | `dht_crawler_tag` 填 `v1.0.2` 等则下载该 tag 的 zip；留空则用 **latest** |
-| **发版产物** | 每次 **push tag** 会**并行**跑 Linux + Windows：上传 `dht-sample-<tag>-linux-x64-all.jar`、`dht-sample-<tag>-win-x64-all.jar`，以及 core / sources / 聚合 / linux-native / win-native 等 JAR |
+| **发版产物** | 每次 **push tag**：Linux + Windows 胖 JAR，以及 **core / sources / linux-native / win-native**（不再上传空的 `dht-jni-*.jar`） |
 | **缓存** | 仅 Gradle cache；无 Cargo 时 Rust 工具链也可不装（push tag 路径零 Rust） |
 | **Release 体积** | 旧 Release 可手动删资产；勿重复上传多份相同 JAR |
 
