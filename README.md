@@ -48,6 +48,27 @@ runtimeOnly(project(":dht-jni-native-linux-x64"))
 
 仅 core 时 classpath 上没有对应平台 native 会报错，除非先 `DhtCrawlerNative.loadFromPath(Path)`。
 
+### 不用源码、只从 GitHub Release 依赖
+
+每个 [Release](https://github.com/0xddy/dht-crawler-java/releases) 里除 **sample 可运行 fat JAR** 外，还会上传库 JAR（版本号与 `build.gradle.kts` 里 `version` 一致，当前为 **1.0.0**）：
+
+| 文件 | 用途 |
+|------|------|
+| **dht-jni-core-1.0.0.jar** | 必装：Kotlin/Java API（`DhtCrawler` 等） |
+| **dht-jni-core-1.0.0-sources.jar** | 可选：源码便于 IDE |
+| **dht-jni-1.0.0.jar** | 可选：聚合坐标；配合下面各 native jar 或仍建议用 core + 单平台 native |
+| **dht-jni-native-linux-x64-1.0.0.jar** | Linux x64：内含 `libdht_crawler.so`，与 core 同 classpath 即可运行 |
+| **dht-jni-native-win-x64-1.0.0.jar** | （若跑了 Windows 构建）Windows x64 的 dll 资源 jar |
+
+Gradle 示例（把 jar 放到 `libs/`）：
+
+```kotlin
+dependencies {
+    implementation(files("libs/dht-jni-core-1.0.0.jar"))
+    runtimeOnly(files("libs/dht-jni-native-linux-x64-1.0.0.jar")) // 按平台选一个
+}
+```
+
 ## Run sample
 
 ```bash

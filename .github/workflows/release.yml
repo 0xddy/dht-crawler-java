@@ -136,20 +136,29 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Fat JAR
+      - name: Fat JAR + 依赖库 JAR（core / 聚合 / Linux native）
         run: |
           chmod +x gradlew
-          ./gradlew :dht-jni-sample:shadowJar --no-daemon
-          SRC=$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
-          cp -v "$SRC" "dht-sample-${TAG}-linux-x64-all.jar"
-          echo "ASSET=dht-sample-${TAG}-linux-x64-all.jar" >> $GITHUB_ENV
+          ./gradlew :dht-jni-sample:shadowJar \
+            :dht-jni-core:jar :dht-jni-core:sourcesJar \
+            :dht-jni:jar \
+            :dht-jni-native-linux-x64:jar \
+            --no-daemon
+          mkdir -p dist
+          SRC=$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)
+          cp -v "$SRC" "dist/dht-sample-${TAG}-linux-x64-all.jar"
+          # 与 Gradle 模块名一致，便于本地 flatDir / 手工依赖
+          cp -v dht-jni-core/build/libs/dht-jni-core-*.jar dist/
+          cp -v dht-jni/build/libs/dht-jni-*.jar dist/
+          cp -v dht-jni-native-linux-x64/build/libs/dht-jni-native-linux-x64-*.jar dist/
+          ls -la dist/
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           generate_release_notes: true
-          files: ${{ env.ASSET }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -216,18 +225,20 @@ jobs:
             ~/.gradle/wrapper
           key: gradle-win-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
-      - name: Fat JAR
+      - name: Fat JAR + Windows native 模块 JAR
         shell: bash
         run: |
-          ./gradlew.bat :dht-jni-sample:shadowJar --no-daemon
+          ./gradlew.bat :dht-jni-sample:shadowJar \
+            :dht-jni-native-win-x64:jar --no-daemon
+          mkdir -p dist
           SRC=$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)
-          cp "$SRC" "dht-sample-${{ inputs.tag_name }}-win-x64-all.jar"
-          echo "ASSET=dht-sample-${{ inputs.tag_name }}-win-x64-all.jar" >> $GITHUB_ENV
+          cp "$SRC" "dist/dht-sample-${{ inputs.tag_name }}-win-x64-all.jar"
+          cp dht-jni-native-win-x64/build/libs/dht-jni-native-win-x64-*.jar dist/
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name }}
           generate_release_notes: false
-          files: ${{ env.ASSET }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
