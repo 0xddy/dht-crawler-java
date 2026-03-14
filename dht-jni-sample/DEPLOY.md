@@ -3,7 +3,7 @@
 ## Requirements
 
 - **JRE or JDK 21** on the server
-- **Linux x64** fat JAR 需包含 `native/linux-x64/libdht_crawler.so`：在构建前把 so 放到 `dht-jni-native-linux-x64/src/main/resources/native/linux-x64/`，或使用 `dht-jni` 聚合 + 全平台 native（默认 sample 已依赖 `dht-jni`）
+- **Linux x64 / ARM64** 等：fat JAR 需包含对应 `native/.../libdht_crawler.so`。本地构建前把上游 JNI 解压进对应模块（如 `dht-jni-native-linux-aarch64/.../linux-aarch64/`）；**Release** 上已有 `dht-sample-*-linux-aarch64-all.jar` 与 `dht-jni-native-linux-aarch64-*.jar`（CI：`ubuntu-24.04-arm` + 上游 `aarch64-unknown-linux-gnu.zip`）。macOS Apple Silicon 同理：`macos-aarch64-all` + `osx-aarch64` native jar。
 - Firewall: allow the **UDP port** you set (default `12313`)
 
 ## Build artifacts (on your dev machine)

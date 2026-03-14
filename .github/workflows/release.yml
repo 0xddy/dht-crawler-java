@@ -1,4 +1,4 @@
-# 每次发版默认：Linux + Windows 各一份 sample 胖 JAR，以及 Linux 任务产出的依赖库 JAR。
+# 每次发版默认：Linux x64 + Windows x64 + Linux aarch64 + macOS aarch64 的 sample 胖 JAR 与对应 native JAR。
 # https://github.com/0xddy/dht-crawler/releases
 name: Release
 
@@ -139,6 +139,214 @@ jobs:
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
           generate_release_notes: true
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Linux ARM64：上游 JNI zip + sample 胖 JAR + dht-jni-native-linux-aarch64 jar
+  release-linux-aarch64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: 下载 JNI (Linux aarch64) — 手动 + release_zip
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'release_zip'
+        run: |
+          set -e
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
+          echo "$JSON" | python3 -c "
+          import json, sys, os, urllib.request, zipfile, shutil
+          j = json.load(sys.stdin)
+          if 'assets' not in j: print(j.get('message', j)); sys.exit(1)
+          for a in j['assets']:
+              n = a['name']
+              if n.startswith('dht_crawler_jni-') and n.endswith('aarch64-unknown-linux-gnu.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.endswith('.so'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.so'))
+                              print('OK', n); sys.exit(0)
+                  sys.exit('no .so')
+          sys.exit('no linux aarch64 jni zip')
+          "
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
+
+      - name: Cargo JNI (Linux aarch64)
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
+        run: |
+          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          cd dht-crawler-build && cargo build --release --features jni
+          mkdir -p ../dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64
+          cp -v target/release/libdht_crawler.so ../dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64/
+
+      - name: 下载 JNI (Linux aarch64) — push tag 默认
+        if: github.event_name == 'push'
+        run: |
+          set -e
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          echo "$JSON" | python3 -c "
+          import json, sys, os, urllib.request, zipfile, shutil
+          j = json.load(sys.stdin)
+          for a in j['assets']:
+              n = a['name']
+              if n.startswith('dht_crawler_jni-') and n.endswith('aarch64-unknown-linux-gnu.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.endswith('.so'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.so'))
+                              print('OK', n); sys.exit(0)
+                  sys.exit('no .so')
+          sys.exit('no linux aarch64 jni zip')
+          "
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-linux-arm-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: Fat JAR + linux-aarch64 native 模块
+        run: |
+          chmod +x gradlew
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.library_version }}" ]; then
+            EXTRA="-Pdht.kt.version=${{ inputs.library_version }}"
+          fi
+          ./gradlew $EXTRA :dht-jni-sample:shadowJar \
+            :dht-jni-native-linux-aarch64:jar \
+            --no-daemon
+          mkdir -p dist
+          cp -v "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-linux-aarch64-all.jar"
+          cp -v dht-jni-native-linux-aarch64/build/libs/dht-jni-native-linux-aarch64-*.jar dist/
+          ls -la dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          generate_release_notes: false
+          files: dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS Apple Silicon：上游 JNI zip + sample 胖 JAR + osx-aarch64 native jar
+  release-macos-aarch64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: 下载 JNI (macOS aarch64) — 手动 + release_zip
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'release_zip'
+        run: |
+          set -e
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
+          echo "$JSON" | python3 -c "
+          import json, sys, os, urllib.request, zipfile, shutil
+          j = json.load(sys.stdin)
+          if 'assets' not in j: print(j.get('message', j)); sys.exit(1)
+          for a in j['assets']:
+              n = a['name']
+              if n.startswith('dht_crawler_jni-') and n.endswith('aarch64-apple-darwin.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.endswith('.dylib'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.dylib'))
+                              print('OK', n); sys.exit(0)
+                  sys.exit('no .dylib')
+          sys.exit('no macos aarch64 jni zip')
+          "
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
+
+      - name: Cargo JNI (macOS aarch64)
+        if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
+        run: |
+          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          cd dht-crawler-build && cargo build --release --features jni
+          mkdir -p ../dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64
+          cp -v target/release/libdht_crawler.dylib ../dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64/
+
+      - name: 下载 JNI (macOS aarch64) — push tag 默认
+        if: github.event_name == 'push'
+        run: |
+          set -e
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          echo "$JSON" | python3 -c "
+          import json, sys, os, urllib.request, zipfile, shutil
+          j = json.load(sys.stdin)
+          for a in j['assets']:
+              n = a['name']
+              if n.startswith('dht_crawler_jni-') and n.endswith('aarch64-apple-darwin.zip'):
+                  urllib.request.urlretrieve(a['browser_download_url'], 'jni.zip')
+                  zipfile.ZipFile('jni.zip').extractall('jni_out')
+                  d = 'dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64'
+                  os.makedirs(d, exist_ok=True)
+                  for root, _, files in os.walk('jni_out'):
+                      for f in files:
+                          if f.endswith('.dylib'):
+                              shutil.copy2(os.path.join(root, f), os.path.join(d, 'libdht_crawler.dylib'))
+                              print('OK', n); sys.exit(0)
+                  sys.exit('no .dylib')
+          sys.exit('no macos aarch64 jni zip')
+          "
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-macos-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: Fat JAR + osx-aarch64 native 模块
+        run: |
+          chmod +x gradlew
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}"
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.library_version }}" ]; then
+            EXTRA="-Pdht.kt.version=${{ inputs.library_version }}"
+          fi
+          ./gradlew $EXTRA :dht-jni-sample:shadowJar \
+            :dht-jni-native-osx-aarch64:jar \
+            --no-daemon
+          mkdir -p dist
+          cp -v "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-macos-aarch64-all.jar"
+          cp -v dht-jni-native-osx-aarch64/build/libs/dht-jni-native-osx-aarch64-*.jar dist/
+          ls -la dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          generate_release_notes: false
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

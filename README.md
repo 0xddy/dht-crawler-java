@@ -8,23 +8,23 @@
 
 1. 打开 **[Releases](https://github.com/0xddy/dht-crawler-java/releases)**，下载对应版本：
   - `**dht-jni-core-<版本>.jar`** — 必下，API 在这
-  - `**dht-jni-native-linux-x64-<版本>.jar**` 或 `**…-win-x64-…**` — 按你部署系统 **二选一**（里面带 so / dll）
+  - **native**：`linux-x64` / `linux-aarch64` / `win-x64` / `osx-x64` / `osx-aarch64`（与 CPU、系统对应；发版 CI 会打 **linux-aarch64**、**macos-aarch64** 的 sample 与 native JAR）
 2. 放进工程的 `libs/`，Gradle 示例：
 
 ```kotlin
 val dht = "1.0.2"   // 与 Release 里 jar 文件名版本一致
 dependencies {
     implementation(files("libs/dht-jni-core-$dht.jar"))
-    runtimeOnly(files("libs/dht-jni-native-linux-x64-$dht.jar"))  // Linux
-    // Windows 用：runtimeOnly(files("libs/dht-jni-native-win-x64-$dht.jar"))
+    runtimeOnly(files("libs/dht-jni-native-linux-x64-$dht.jar"))
+    // Linux ARM：dht-jni-native-linux-aarch64；Windows：win-x64；Mac M 系列：osx-aarch64
 }
 ```
 
 1. 代码里直接用 `DhtCrawler` 即可：**第一次**用到 JNI 时会在内部自动从 classpath 的 native jar 里 **解压 so/dll 再 `System.load`**，不必自己写释放/加载。只有库放在磁盘路径时，才需在任意 `DhtCrawler` 调用前 `DhtCrawlerNative.loadFromPath(Path("..."))`。
-2. **只想先跑通**：直接下 `**dht-sample-<tag>-linux-x64-all.jar`** 或 `**-win-x64-…**`，然后：
+2. **只想先跑通**：按架构选胖 JAR：`linux-x64-all` / `linux-aarch64-all` / `win-x64-all` / `macos-aarch64-all`。
 
 ```bash
-java -jar dht-sample-vx.x.x-linux-x64-all.jar
+java -jar dht-sample-vx.x.x-linux-aarch64-all.jar   # 例：ARM64 Linux
 ```
 
 常用 JVM 参数：`-Ddht.port=12313`、`-Ddht.durationSec=60`（跑满 60 秒退出）、`-Ddht.statsSec=30`（统计间隔）。自备 **JDK 21**。
