@@ -13,6 +13,7 @@ plugins {
 rootProject.name = "dht-kt"
 include(
     "dht-jni-core",
+    "dht-jni-coroutines",
     "dht-jni-native-win-x64",
     "dht-jni-native-linux-x64",
     "dht-jni-native-linux-aarch64",

@@ -7,48 +7,42 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 
 /** Extract platform `dht_crawler` native from classpath and [System.load] it. */
-object NativeLoader {
+internal object NativeLoader {
 
-    const val LIB_VERSION = "1.0.0"
+    /** Binding version; isolates extracted native libraries from older incompatible JARs. */
+    const val LIB_VERSION = "2.0.0"
 
     @Volatile
     private var loaded = false
 
     private val loadLock = Any()
 
-    private val loadedFromPath = AtomicBoolean(false)
-
     private const val RESOURCE_PREFIX = "/native/"
 
-    internal fun markLoadedFromPath() {
-        loadedFromPath.set(true)
-        loaded = true
-    }
+    val isLoaded: Boolean
+        get() = loaded
 
-    fun isLoaded(): Boolean = loaded || loadedFromPath.get()
-
-    fun loadFromPath(path: Path) {
+    fun load(path: Path) {
         synchronized(loadLock) {
-            if (isLoaded()) return
+            if (loaded) return
             System.load(path.toAbsolutePath().toString())
-            markLoadedFromPath()
+            loaded = true
         }
     }
 
     fun load() {
-        if (loaded || loadedFromPath.get()) return
+        if (loaded) return
         synchronized(loadLock) {
-            if (loaded || loadedFromPath.get()) return
+            if (loaded) return
             val resourcePath = resourcePathForCurrentPlatform()
                 ?: throw IllegalStateException(
                     "Unsupported platform: ${System.getProperty("os.name")} / ${System.getProperty("os.arch")}. " +
-                        "Put native under src/main/resources/native/ or call DhtCrawlerNative.loadFromPath(Path) before using DhtCrawler.",
+                        "Add the matching native JAR or call DhtCrawlerNative.load(path) first.",
                 )
             val fileName = resourcePath.substringAfterLast('/')
             val dir = extractDir()
@@ -129,8 +123,11 @@ object NativeLoader {
 }
 
 object DhtCrawlerNative {
+    val isLoaded: Boolean
+        get() = NativeLoader.isLoaded
 
-    fun loadFromPath(path: Path) {
-        NativeLoader.loadFromPath(path)
+    /** Loads a native library from an explicit filesystem path before creating a crawler. */
+    fun load(path: Path) {
+        NativeLoader.load(path)
     }
 }

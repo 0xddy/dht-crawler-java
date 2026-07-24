@@ -4,7 +4,7 @@
 
 - **JRE or JDK 21** on the server
 - **Linux x64 / ARM64** 等：fat JAR 需包含对应 `native/.../libdht_crawler.so`。本地构建前把上游 JNI 解压进对应模块（如 `dht-jni-native-linux-aarch64/.../linux-aarch64/`）；**Release** 上已有 `dht-sample-*-linux-aarch64-all.jar` 与 `dht-jni-native-linux-aarch64-*.jar`（CI：`ubuntu-24.04-arm` + 上游 `aarch64-unknown-linux-gnu.zip`）。macOS Apple Silicon 同理：`macos-aarch64-all` + `osx-aarch64` native jar。
-- Firewall: allow the **UDP port** you set (default `12313`)
+- Firewall: allow the **UDP port** you set (sample default `12313`)
 
 ## Build artifacts (on your dev machine)
 
@@ -16,9 +16,9 @@ Outputs:
 
 | Artifact | Path |
 |----------|------|
-| **Fat JAR (recommended)** | `dht-jni-sample/build/libs/dht-sample-1.0.0-all.jar` |
-| **ZIP bundle** | `dht-jni-sample/build/distributions/dht-sample-1.0.0.zip` |
-| **TGZ bundle** | `./gradlew :dht-jni-sample:distTar` → `build/distributions/dht-sample-1.0.0.tar` (gzip) |
+| **Fat JAR (recommended)** | `dht-jni-sample/build/libs/dht-sample-2.0.0-all.jar` |
+| **ZIP bundle** | `dht-jni-sample/build/distributions/dht-sample-2.0.0.zip` |
+| **TGZ bundle** | `./gradlew :dht-jni-sample:distTar` → `build/distributions/dht-sample-2.0.0.tar` (gzip) |
 
 ## 瘦包（仅 Linux x64）
 
@@ -30,6 +30,7 @@ Outputs:
 
 ```kotlin
 implementation(project(":dht-jni-core"))
+implementation(project(":dht-jni-coroutines"))
 runtimeOnly(project(":dht-jni-native-linux-x64"))
 ```
 
@@ -40,21 +41,27 @@ runtimeOnly(project(":dht-jni-native-linux-x64"))
 Copy `dht-sample-*-all.jar` to the server, then:
 
 ```bash
-nohup java -Ddht.port=12313 -jar dht-sample-1.0.0-all.jar \
+nohup java -Ddht.port=12313 -jar dht-sample-2.0.0-all.jar \
   > dht-sample.out 2>&1 &
 ```
 
 Note: JVM **must** see system properties **before** `-jar`. Prefer:
 
 ```bash
-java -Ddht.port=12313 -jar dht-sample-1.0.0-all.jar
+java -Ddht.port=12313 -jar dht-sample-2.0.0-all.jar
 ```
+
+可选参数：
+
+- `-Ddht.networkMode=IPV4_ONLY|IPV6_ONLY|DUAL_STACK`
+- `-Ddht.durationSec=60`
+- `-Ddht.statsSec=30`
 
 ## Option B — ZIP distribution
 
 ```bash
-unzip dht-sample-1.0.0.zip
-cd dht-sample-1.0.0
+unzip dht-sample-2.0.0.zip
+cd dht-sample-2.0.0
 ./bin/dht-sample
 ```
 
@@ -78,7 +85,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/dht-sample
-ExecStart=/usr/bin/java -Xms256m -Xmx512m -Ddht.port=12313 -jar /opt/dht-sample/dht-sample-1.0.0-all.jar
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -Ddht.port=12313 -jar /opt/dht-sample/dht-sample-2.0.0-all.jar
 Restart=on-failure
 
 [Install]
@@ -90,7 +97,8 @@ WantedBy=multi-user.target
 Use an `.so` built on the same distro/glibc as the server:
 
 ```bash
-java -Ddht.jni.library.path=/opt/dht-sample/libdht_crawler.so -jar dht-sample-1.0.0-all.jar
+java -Ddht.jni.library.path=/opt/dht-sample/libdht_crawler.so -jar dht-sample-2.0.0-all.jar
 ```
 
-Call `DhtCrawlerNative.loadFromPath` path must be set via property **before** main loads JNI — the sample already supports `dht.jni.library.path` at startup.
+`DhtCrawlerNative.load(path)` 必须在创建 crawler 前调用；sample 会在启动时读取
+`dht.jni.library.path` 并完成加载。

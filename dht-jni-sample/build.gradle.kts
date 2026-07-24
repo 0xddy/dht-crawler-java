@@ -13,6 +13,7 @@ kotlin {
 
 dependencies {
     implementation(project(":dht-jni"))
+    implementation(project(":dht-jni-coroutines"))
     testImplementation(kotlin("test"))
 }
 
@@ -23,6 +24,18 @@ application {
         "-Xms256m",
         "-Xmx512m",
     )
+}
+
+tasks.withType<JavaExec>().configureEach {
+    listOf(
+        "dht.jni.library.path",
+        "dht.port",
+        "dht.networkMode",
+        "dht.durationSec",
+        "dht.statsSec",
+    ).forEach { key ->
+        System.getProperty(key)?.let { value -> systemProperty(key, value) }
+    }
 }
 
 tasks.test {

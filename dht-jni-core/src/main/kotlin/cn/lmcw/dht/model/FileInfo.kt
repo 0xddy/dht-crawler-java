@@ -1,9 +1,7 @@
 package cn.lmcw.dht.model
 
-/** Rust JNI ctor (Ljava/lang/String;J)V */
-class FileInfo constructor(
-    @JvmField val path: String,
-    @JvmField val size: Long,
-) {
-    override fun toString(): String = "FileInfo(path='$path', size=$size)"
-}
+/** One file entry from validated torrent metadata. */
+data class FileInfo(
+    val path: String,
+    val size: Long,
+)

@@ -1,5 +1,5 @@
-# dht-jni — JNI 与 R8/ProGuard 混淆保留（须与 dht-jni-core/proguard-dht-jni.pro 保持一致）
-# Android: consumerProguardFiles 或 -include 本文件；core / 聚合 jar 均含 META-INF/proguard/dht-jni.pro
+# dht-kt 2.x — JNI/R8/ProGuard keep rules
+# Keep synchronized with dht-jni-core/proguard-dht-jni.pro.
 
 -keepclasseswithmembernames class cn.lmcw.dht.DhtCrawlerJni {
     native <methods>;
@@ -8,42 +8,47 @@
     <init>();
 }
 
--keepclassmembers class cn.lmcw.dht.model.DHTOptions {
+-keepclassmembers class cn.lmcw.dht.internal.NativeOptions {
     <fields>;
-}
--keep class cn.lmcw.dht.model.DHTOptions {
-    <init>();
 }
 
--keepclassmembers class cn.lmcw.dht.model.FileInfo {
-    <fields>;
-    <init>(java.lang.String, long);
+-keepclassmembers class cn.lmcw.dht.internal.NativeListener {
+    void onTorrent(cn.lmcw.dht.model.TorrentInfo);
+    void onError(java.lang.String);
+    boolean onMetadataFetch(java.lang.String);
 }
+
 -keep class cn.lmcw.dht.model.FileInfo {
-    <init>(java.lang.String, long);
-}
-
--keepclassmembers class cn.lmcw.dht.model.TorrentInfo {
-    <fields>;
-    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
+    public *;
 }
 -keep class cn.lmcw.dht.model.TorrentInfo {
-    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
-}
-
--keep class cn.lmcw.dht.DhtListener {
-    public <methods>;
-}
--keep class * implements cn.lmcw.dht.DhtListener {
-    public <methods>;
+    public *;
 }
 
 -keep class cn.lmcw.dht.DhtCrawler {
-    public <methods>;
+    public *;
+}
+-keep class cn.lmcw.dht.DhtCrawler$State {
+    public *;
 }
 -keep class cn.lmcw.dht.DhtCrawlerNative {
-    public <methods>;
+    public *;
 }
--keep class cn.lmcw.dht.NativeLoader {
-    public <methods>;
+-keep class cn.lmcw.dht.NetworkMode {
+    public *;
+}
+-keep class cn.lmcw.dht.DhtConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.MetadataConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.NodePoolConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.RateLimitConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.DhtCrawlerDslKt {
+    public static <methods>;
 }
