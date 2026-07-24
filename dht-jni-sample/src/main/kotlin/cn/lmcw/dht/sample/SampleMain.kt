@@ -1,91 +1,110 @@
 package cn.lmcw.dht.sample
 
-import cn.lmcw.dht.DhtCrawler
-import cn.lmcw.dht.DhtListener
-import cn.lmcw.dht.model.DHTOptions
-import cn.lmcw.dht.model.TorrentInfo
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import cn.lmcw.dht.DhtCrawlerNative
+import cn.lmcw.dht.NetworkMode
+import cn.lmcw.dht.coroutines.withDhtCrawler
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.Path
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
-/**
- * 与 **docs/sample-run.kt** 同步。
- *
- * classpath 上带有 native jar 时，**首次**用到 `DhtCrawler` 会在内部自动解压 so/dll 并 `System.load`，不必手写加载逻辑。
- * 只有要把库放在磁盘任意路径时，才需在**任何** `DhtCrawler` 调用之前执行 `DhtCrawlerNative.loadFromPath`（见下方 dht.jni.library.path）。
- *
- * JVM: dht.jni.library.path, dht.port, dht.netMode, dht.durationSec, dht.statsSec
- */
-fun main() {
-    System.getProperty("dht.jni.library.path")?.trim()?.takeIf { it.isNotEmpty() }?.let { path ->
-        cn.lmcw.dht.DhtCrawlerNative.loadFromPath(Path(path))
-    }
+suspend fun main() {
+    System.getProperty("dht.jni.library.path")
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?.let { DhtCrawlerNative.load(Path(it)) }
 
-    val port = System.getProperty("dht.port")?.toIntOrNull() ?: 12313
-    val netMode = System.getProperty("dht.netMode")?.toIntOrNull()?.coerceIn(0, 2) ?: 0
-    val durationSec = System.getProperty("dht.durationSec")?.toLongOrNull() ?: 0L
-    val statsSec = System.getProperty("dht.statsSec")?.toLongOrNull()?.coerceAtLeast(10) ?: 30L
+    val port = System.getProperty("dht.port")?.toIntOrNull() ?: 12_313
+    val networkMode = System.getProperty("dht.networkMode")
+        ?.let { NetworkMode.valueOf(it.uppercase(Locale.ROOT)) }
+        ?: NetworkMode.IPV4_ONLY
+    val durationSeconds = System.getProperty("dht.durationSec")?.toLongOrNull() ?: 0L
+    val statsSeconds = System.getProperty("dht.statsSec")?.toLongOrNull()?.coerceAtLeast(10) ?: 30L
 
-    val options = DHTOptions()
-        .setPort(port)
-        .setNetMode(netMode)
-        .setMetadataTimeout(5L)
-        .setMaxMetadataWorkerCount(200)
-        .setMaxMetadataQueueSize(50_000)
-        .setNodeQueueCapacity(80_000)
-        .setHashQueueCapacity(8_000)
+    val metadataCount = AtomicLong()
+    val startedAt = System.nanoTime()
 
-    val metadataOk = AtomicLong(0L)
-    val startedAt = System.currentTimeMillis()
+    val stopSignal = CompletableDeferred<Unit>()
+    val stopped = CompletableDeferred<Unit>()
+    val shutdownHook = Thread(
+        {
+            stopSignal.complete(Unit)
+            runBlocking {
+                withTimeoutOrNull(5.seconds) {
+                    stopped.await()
+                }
+            }
+        },
+        "dht-sample-shutdown",
+    )
+    Runtime.getRuntime().addShutdownHook(shutdownHook)
 
-    val listener = object : DhtListener {
-        override fun onTorrent(info: TorrentInfo) {
-            metadataOk.incrementAndGet()
-            println("${info.infoHash}  ${info.name}")
-        }
+    try {
+        withDhtCrawler(
+            configure = {
+                this.port = port
+                this.networkMode = networkMode
 
-        override fun onError(message: String) {
-            System.err.println(message)
-        }
-    }
+                metadata {
+                    timeout = 5.seconds
+                    queueCapacity = 10_000
+                    workers = 200
+                }
+                nodePool {
+                    capacity = 80_000
+                    lowWatermark = 8_000
+                }
+                rateLimit {
+                    findNodeRatePerSecond = 200
+                }
 
-    println("UDP port=$port  (metadata lines: info_hash + name)")
-    println()
-
-    val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "dht-sample-stats").apply { isDaemon = true }
-    }
-
-    DhtCrawler.createServer(options, listener).use { crawler ->
-        Runtime.getRuntime().addShutdownHook(
-            Thread {
-                scheduler.shutdownNow()
-                try {
-                    crawler.stop()
-                } catch (_: Throwable) { }
+                onTorrent { torrent ->
+                    metadataCount.incrementAndGet()
+                    println("${torrent.infoHash}  ${torrent.name}")
+                }
+                onError(System.err::println)
             },
-        )
+        ) { crawler ->
+            println("DHT crawler started: port=$port, networkMode=$networkMode")
 
-        crawler.start()
+            val statsJob = launch {
+                while (isActive) {
+                    delay(statsSeconds.seconds)
+                    val elapsed =
+                        (System.nanoTime() - startedAt).coerceAtLeast(1) / 1_000_000_000.0
+                    val count = metadataCount.get()
+                    println(
+                        "[stats] nodes=${crawler.nodeCount} metadata=$count " +
+                            "speed=${"%.2f".format(count / elapsed)}/s",
+                    )
+                }
+            }
 
-        val statsTask = scheduler.scheduleAtFixedRate({
-            val elapsedSec = ((System.currentTimeMillis() - startedAt).coerceAtLeast(1)) / 1000
-            val n = metadataOk.get()
-            val perSec = n.toDouble() / elapsedSec
-            println("[port=$port] metadata_ok=$n  speed=${"%.2f".format(perSec)}/s")
-        }, statsSec, statsSec, TimeUnit.SECONDS)
-
-        if (durationSec <= 0) {
-            Thread.sleep(Long.MAX_VALUE)
-        } else {
-            Thread.sleep(TimeUnit.SECONDS.toMillis(durationSec))
-            statsTask.cancel(false)
-            scheduler.shutdown()
-            scheduler.awaitTermination(2, TimeUnit.SECONDS)
-            val elapsedSec = ((System.currentTimeMillis() - startedAt).coerceAtLeast(1)) / 1000
-            val n = metadataOk.get()
-            println("[done] port=$port metadata_ok=$n  avg=${"%.2f".format(n.toDouble() / elapsedSec)}/s")
+            try {
+                if (durationSeconds <= 0) {
+                    stopSignal.await()
+                } else {
+                    withTimeoutOrNull(durationSeconds.seconds) {
+                        stopSignal.await()
+                    }
+                }
+            } finally {
+                statsJob.cancelAndJoin()
+            }
         }
+    } finally {
+        stopped.complete(Unit)
+        runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
     }
+
+    val elapsed = (System.nanoTime() - startedAt).coerceAtLeast(1) / 1_000_000_000.0
+    val count = metadataCount.get()
+    println("[done] metadata=$count avg=${"%.2f".format(count / elapsed)}/s")
 }

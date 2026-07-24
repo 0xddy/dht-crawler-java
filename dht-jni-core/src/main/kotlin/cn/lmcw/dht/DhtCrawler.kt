@@ -1,80 +1,81 @@
 package cn.lmcw.dht
 
-import cn.lmcw.dht.model.DHTOptions
+import cn.lmcw.dht.internal.NativeListener
+import cn.lmcw.dht.internal.NativeOptions
 
-/** DHT session; callbacks run on Rust threads — implementations must be thread-safe. */
-class DhtCrawler private constructor(
+/**
+ * One native DHT crawler session.
+ *
+ * Create it with [dhtCrawler]. [start] is non-blocking; [stop] and [close] are idempotent.
+ */
+class DhtCrawler internal constructor(
     @Volatile private var handle: Long,
+    val config: DhtConfig,
 ) : AutoCloseable {
-
-    @Volatile
-    private var started: Boolean = false
-
     private val sync = Any()
 
-    fun start() {
+    @Volatile
+    private var currentState: State = State.CREATED
+
+    val state: State
+        get() = synchronized(sync) { currentState }
+
+    val isRunning: Boolean
+        get() = state == State.RUNNING
+
+    val isOpen: Boolean
+        get() = state != State.CLOSED
+
+    /** Current number of nodes retained by the native crawler. */
+    val nodeCount: Int
+        get() = synchronized(sync) {
+            if (handle == 0L) 0 else DhtCrawlerJni.getNodePoolSize(handle)
+        }
+
+    /** Starts the crawler in the background and returns this session for concise chaining. */
+    fun start(): DhtCrawler {
         synchronized(sync) {
-            check(handle != 0L) { "Session closed; cannot start" }
-            if (started) return
+            check(handle != 0L) { "Crawler is closed and cannot be started" }
+            if (currentState == State.RUNNING) return this
             DhtCrawlerJni.startServer(handle)
-            started = true
+            currentState = State.RUNNING
+            return this
         }
     }
 
+    /** Stops this session and schedules native runtime cleanup. */
     fun stop() {
-        synchronized(sync) {
+        val handleToStop = synchronized(sync) {
             if (handle == 0L) return
-            DhtCrawlerJni.stopServer(handle)
+            val value = handle
             handle = 0L
-            started = false
+            currentState = State.CLOSED
+            value
         }
+        DhtCrawlerJni.stopServer(handleToStop)
     }
 
-    fun isStarted(): Boolean = synchronized(sync) { started && handle != 0L }
+    override fun close() = stop()
 
-    fun isOpen(): Boolean = synchronized(sync) { handle != 0L }
-
-    fun getNodePoolSize(): Int {
-        synchronized(sync) {
-            if (handle == 0L) return 0
-            return DhtCrawlerJni.getNodePoolSize(handle)
-        }
+    enum class State {
+        CREATED,
+        RUNNING,
+        CLOSED,
     }
 
-    override fun close() {
-        stop()
-    }
-
-    companion object {
-        /** @param options null = Rust defaults; @param listener null = no callbacks */
-        @JvmStatic
-        fun createServer(options: DHTOptions?, listener: DhtListener?): DhtCrawler {
-            options?.let { validateOptions(it) }
-            val h = DhtCrawlerJni.createServer(options, listener)
-            if (h == 0L) {
-                throw IllegalStateException("DHT server create failed (createServer returned 0)")
-            }
-            return DhtCrawler(h)
+    internal companion object {
+        fun create(config: DhtConfig, callbacks: DhtCallbacks): DhtCrawler {
+            val listener = callbacks.toNativeListenerOrNull()
+            val handle = DhtCrawlerJni.createServer(NativeOptions(config), listener)
+            check(handle != 0L) { "Native DHT crawler creation failed" }
+            return DhtCrawler(handle, config)
         }
 
-        private fun validateOptions(options: DHTOptions) {
-            require(options.port in 0..65535) { "port must be in [0, 65535], got ${options.port}" }
-            require(options.metadataTimeout >= 0L) {
-                "metadataTimeout must be >= 0, got ${options.metadataTimeout}"
+        private fun DhtCallbacks.toNativeListenerOrNull(): NativeListener? =
+            if (onTorrent == null && onError == null && metadataFilter == null) {
+                null
+            } else {
+                NativeListener(this)
             }
-            require(options.maxMetadataQueueSize > 0) {
-                "maxMetadataQueueSize must be > 0, got ${options.maxMetadataQueueSize}"
-            }
-            require(options.maxMetadataWorkerCount > 0) {
-                "maxMetadataWorkerCount must be > 0, got ${options.maxMetadataWorkerCount}"
-            }
-            require(options.nodeQueueCapacity > 0) {
-                "nodeQueueCapacity must be > 0, got ${options.nodeQueueCapacity}"
-            }
-            require(options.hashQueueCapacity > 0) {
-                "hashQueueCapacity must be > 0, got ${options.hashQueueCapacity}"
-            }
-            require(options.netMode in 0..2) { "netMode must be 0, 1 or 2, got ${options.netMode}" }
-        }
     }
 }

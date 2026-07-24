@@ -1,7 +1,7 @@
-# dht-jni — JNI 混淆保留（须与 Rust 侧 symbols 一致；与 dht-jni/proguard-dht-jni.pro 保持同步）
-# Android: consumerProguardFiles / -include；core jar → META-INF/proguard/dht-jni.pro
+# dht-kt 2.x — JNI/R8/ProGuard keep rules
+# Keep synchronized with dht-jni/proguard-dht-jni.pro.
 
-# DhtCrawlerJni native symbols Java_cn_lmcw_dht_DhtCrawlerJni_*
+# Rust exports Java_cn_lmcw_dht_DhtCrawlerJni_*.
 -keepclasseswithmembernames class cn.lmcw.dht.DhtCrawlerJni {
     native <methods>;
 }
@@ -9,47 +9,51 @@
     <init>();
 }
 
-# Rust GetField on DHTOptions
--keepclassmembers class cn.lmcw.dht.model.DHTOptions {
+# Rust reads these exact field names and primitive descriptors with GetField.
+-keepclassmembers class cn.lmcw.dht.internal.NativeOptions {
     <fields>;
-}
--keep class cn.lmcw.dht.model.DHTOptions {
-    <init>();
 }
 
-# Rust NewObject FileInfo(String, long)
--keepclassmembers class cn.lmcw.dht.model.FileInfo {
-    <fields>;
-    <init>(java.lang.String, long);
+# Rust invokes these exact callback method names.
+-keepclassmembers class cn.lmcw.dht.internal.NativeListener {
+    void onTorrent(cn.lmcw.dht.model.TorrentInfo);
+    void onError(java.lang.String);
+    boolean onMetadataFetch(java.lang.String);
 }
+
+# Rust resolves these classes by name and calls their constructors.
 -keep class cn.lmcw.dht.model.FileInfo {
-    <init>(java.lang.String, long);
-}
-
-# Rust NewObject TorrentInfo
--keepclassmembers class cn.lmcw.dht.model.TorrentInfo {
-    <fields>;
-    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
+    public *;
 }
 -keep class cn.lmcw.dht.model.TorrentInfo {
-    <init>(java.lang.String, java.lang.String, java.lang.String, long, java.util.List, long, java.util.List, long);
+    public *;
 }
 
-# call_method onTorrent / onError / onMetadataFetch
--keep class cn.lmcw.dht.DhtListener {
-    public <methods>;
-}
--keep class * implements cn.lmcw.dht.DhtListener {
-    public <methods>;
-}
-
-# Public API
+# Stable public Kotlin/JVM API.
 -keep class cn.lmcw.dht.DhtCrawler {
-    public <methods>;
+    public *;
+}
+-keep class cn.lmcw.dht.DhtCrawler$State {
+    public *;
 }
 -keep class cn.lmcw.dht.DhtCrawlerNative {
-    public <methods>;
+    public *;
 }
--keep class cn.lmcw.dht.NativeLoader {
-    public <methods>;
+-keep class cn.lmcw.dht.NetworkMode {
+    public *;
+}
+-keep class cn.lmcw.dht.DhtConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.MetadataConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.NodePoolConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.RateLimitConfig {
+    public *;
+}
+-keep class cn.lmcw.dht.DhtCrawlerDslKt {
+    public static <methods>;
 }

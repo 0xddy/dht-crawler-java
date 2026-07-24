@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "本仓库 Release 对应 tag，例如 v1.0.0"
+        description: "本仓库 Release 对应 tag，例如 v2.0.0"
         required: true
-        default: "v1.0.0"
+        default: "v2.0.0"
       native_source:
         description: "native：release_zip=上游预编译 zip；cargo=本机 cargo 编（仅手动时）"
         type: choice
@@ -19,11 +19,11 @@ on:
           - cargo
         default: release_zip
       dht_crawler_tag:
-        description: "上游 JNI 版本，留空=latest（如 v1.0.2）"
+        description: "上游 JNI 版本，留空=仓库固定兼容版本（如 v0.2.1）"
         required: false
         default: ""
       library_version:
-        description: "库 JAR 版本号（如 1.2.0 → dht-jni-native-linux-x64-1.2.0.jar）；留空则用仓库 gradle.properties 里 dht.kt.version"
+        description: "库 JAR 版本号（如 2.0.0 → dht-jni-native-linux-x64-2.0.0.jar）；留空则用仓库 gradle.properties 里 dht.kt.version"
         required: false
         default: ""
 
@@ -37,9 +37,26 @@ concurrency:
 env:
   DHT_CRAWLER_REPO: https://github.com/0xddy/dht-crawler.git
   DHT_CRAWLER_API: https://api.github.com/repos/0xddy/dht-crawler
+  DHT_CRAWLER_TAG: v0.2.1
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Test JVM API and build sample
+        run: |
+          chmod +x gradlew
+          ./gradlew test :dht-jni-sample:compileKotlin --no-daemon
+
   release-linux:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +71,8 @@ jobs:
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
@@ -81,7 +99,9 @@ jobs:
       - name: Cargo JNI (Linux)
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         run: |
-          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          git clone --branch "$TAG" --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
           cd dht-crawler-build && cargo build --release --features jni
           mkdir -p ../dht-jni-native-linux-x64/src/main/resources/native/linux-x64
           cp -v target/release/libdht_crawler.so ../dht-jni-native-linux-x64/src/main/resources/native/linux-x64/
@@ -90,7 +110,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           set -e
-          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/tags/${{ env.DHT_CRAWLER_TAG }}")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
@@ -127,11 +147,13 @@ jobs:
           fi
           ./gradlew $EXTRA :dht-jni-sample:shadowJar \
             :dht-jni-core:jar \
+            :dht-jni-coroutines:jar \
             :dht-jni-native-linux-x64:jar \
             --no-daemon
           mkdir -p dist
           cp -v "$(ls dht-jni-sample/build/libs/dht-sample-*-all.jar | head -1)" "dist/dht-sample-${TAG}-linux-x64-all.jar"
           cp -v dht-jni-core/build/libs/dht-jni-core-*.jar dist/
+          cp -v dht-jni-coroutines/build/libs/dht-jni-coroutines-*.jar dist/
           cp -v dht-jni-native-linux-x64/build/libs/dht-jni-native-linux-x64-*.jar dist/
           ls -la dist/
 
@@ -145,6 +167,7 @@ jobs:
 
   # Linux ARM64：上游 JNI zip + sample 胖 JAR + dht-jni-native-linux-aarch64 jar
   release-linux-aarch64:
+    needs: verify
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -159,7 +182,8 @@ jobs:
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
@@ -187,7 +211,9 @@ jobs:
       - name: Cargo JNI (Linux aarch64)
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         run: |
-          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          git clone --branch "$TAG" --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
           cd dht-crawler-build && cargo build --release --features jni
           mkdir -p ../dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64
           cp -v target/release/libdht_crawler.so ../dht-jni-native-linux-aarch64/src/main/resources/native/linux-aarch64/
@@ -196,7 +222,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           set -e
-          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/tags/${{ env.DHT_CRAWLER_TAG }}")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
@@ -249,6 +275,7 @@ jobs:
 
   # macOS Apple Silicon：上游 JNI zip + sample 胖 JAR + osx-aarch64 native jar
   release-macos-aarch64:
+    needs: verify
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -263,7 +290,8 @@ jobs:
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
@@ -291,7 +319,9 @@ jobs:
       - name: Cargo JNI (macOS aarch64)
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         run: |
-          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          git clone --branch "$TAG" --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
           cd dht-crawler-build && cargo build --release --features jni
           mkdir -p ../dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64
           cp -v target/release/libdht_crawler.dylib ../dht-jni-native-osx-aarch64/src/main/resources/native/osx-aarch64/
@@ -300,7 +330,7 @@ jobs:
         if: github.event_name == 'push'
         run: |
           set -e
-          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/tags/${{ env.DHT_CRAWLER_TAG }}")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
@@ -353,6 +383,7 @@ jobs:
 
   # 默认每次发版都跑：与 Linux 并行，上传 Windows 胖 JAR + win native 模块 jar
   release-windows:
+    needs: verify
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -367,7 +398,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/latest")
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "${{ env.DHT_CRAWLER_API }}/releases/tags/${{ env.DHT_CRAWLER_TAG }}")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
           j = json.load(sys.stdin)
@@ -392,7 +423,8 @@ jobs:
         run: |
           set -e
           TAG="${{ inputs.dht_crawler_tag }}"
-          if [ -n "$TAG" ]; then API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"; else API="${{ env.DHT_CRAWLER_API }}/releases/latest"; fi
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          API="${{ env.DHT_CRAWLER_API }}/releases/tags/${TAG}"
           JSON=$(curl -sSL -H "Accept: application/vnd.github+json" "$API")
           echo "$JSON" | python3 -c "
           import json, sys, os, urllib.request, zipfile, shutil
@@ -419,7 +451,9 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.native_source == 'cargo'
         shell: bash
         run: |
-          git clone --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
+          TAG="${{ inputs.dht_crawler_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ env.DHT_CRAWLER_TAG }}"; fi
+          git clone --branch "$TAG" --depth 1 "${{ env.DHT_CRAWLER_REPO }}" dht-crawler-build
           cd dht-crawler-build && cargo build --release --features jni
           mkdir -p ../dht-jni-native-win-x64/src/main/resources/native/win-x64
           cp -v target/release/dht_crawler.dll ../dht-jni-native-win-x64/src/main/resources/native/win-x64/ 2>/dev/null || \
