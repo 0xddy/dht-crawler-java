@@ -56,7 +56,11 @@ class DhtCrawlerScope internal constructor(config: DhtConfig) {
         errorHandler = handler
     }
 
-    /** Return false to reject an InfoHash before metadata download. Keep this callback fast. */
+    /**
+     * Return false to reject an InfoHash before metadata download. Exceptions are logged and
+     * cleared by the native boundary, treated as rejection, and not propagated beyond JNI. Keep
+     * this callback fast.
+     */
     fun filterMetadata(predicate: (String) -> Boolean) {
         fetchFilter = predicate
     }
