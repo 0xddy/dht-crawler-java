@@ -188,6 +188,8 @@ dhtCrawler {
 
 - 回调可能从多个 Rust 工作线程并发执行。
 - `onTorrent` 正常返回后，native 按已接受交付处理。
+- `filterMetadata` 抛出异常时，native 会记录并清除异常，按 `false` 拒绝该 InfoHash；
+  异常不会从 JNI 回调继续传播。
 - 当前 JNI 尚未暴露 Rust 的 delivery ack 和 metadata completion callback。
 - 不注册 `onError` 时错误仍由 native 日志处理。
 
